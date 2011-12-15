@@ -46,7 +46,7 @@ static string overall_category = "scribe_overall";
 static string log_separator = ":";
 
 void print_usage(const char* program_name) {
-  cout << "Usage: " << program_name << " [-p port] [-c config_file]" << endl;
+  cout << "Usage: " << program_name << " [-b bind_address] [-p port] [-c config_file]" << endl;
 }
 
 void scribeHandler::incCounter(string category, string counter) {
@@ -76,16 +76,18 @@ int main(int argc, char **argv) {
     }
 
     int next_option;
-    const char* const short_options = "hp:c:";
+    const char* const short_options = "hb:p:c:";
     const struct option long_options[] = {
       { "help",   0, NULL, 'h' },
       { "port",   0, NULL, 'p' },
+      { "bindaddr",   0, NULL, 'b' },
       { "config", 0, NULL, 'c' },
       { NULL,     0, NULL, 'o' },
     };
 
     unsigned long int port = 0;  // this can also be specified in the conf file, which overrides the command line
     std::string config_file;
+    std::string bindif;
     while (0 < (next_option = getopt_long(argc, argv, short_options, long_options, NULL))) {
       switch (next_option) {
       default:
@@ -94,6 +96,9 @@ int main(int argc, char **argv) {
         exit(0);
       case 'c':
         config_file = optarg;
+        break;
+      case 'b':
+        bindif = optarg;
         break;
       case 'p':
         port = strtoul(optarg, NULL, 0);
@@ -109,7 +114,7 @@ int main(int argc, char **argv) {
     // seed random number generation with something reasonably unique
     srand(time(NULL) ^ getpid());
 
-    g_Handler = shared_ptr<scribeHandler>(new scribeHandler(port, config_file));
+    g_Handler = shared_ptr<scribeHandler>(new scribeHandler(port, config_file, bindif));
     g_Handler->initialize();
 
     scribe::startServer(); // never returns
@@ -122,11 +127,12 @@ int main(int argc, char **argv) {
   return 0;
 }
 
-scribeHandler::scribeHandler(unsigned long int server_port, const std::string& config_file)
+scribeHandler::scribeHandler(unsigned long int server_port, const std::string& config_file, const std::string& bindaddr)
   : FacebookBase("Scribe"),
     port(server_port),
     numThriftServerThreads(DEFAULT_SERVER_THREADS),
     checkPeriod(DEFAULT_CHECK_PERIOD),
+    bindAddress(bindaddr),
     configFilename(config_file),
     status(STARTING),
     statusDetails("initial state"),
@@ -576,7 +582,17 @@ void scribeHandler::initialize() {
     } else {
       newThreadPerCategory = true;
     }
-
+    
+    string tempBindAddr;
+    config.getString("bindaddr", tempBindAddr);
+    if (tempBindAddr.length() && tempBindAddr.compare(bindAddress)) {
+        LOG_OPER("bind_address %s from conf file overriding old bind_address %s", tempBindAddr.c_str(), bindAddress.c_str());
+        bindAddress = tempBindAddr;
+    }
+    if (0 == bindAddress.length()) {
+        LOG_OPER("bind_address not set, binding to all interfaces");
+    } 
+    
     unsigned long int old_port = port;
     config.getUnsigned("port", port);
     if (old_port != 0 && port != old_port) {

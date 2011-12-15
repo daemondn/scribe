@@ -118,11 +118,15 @@ void scribe::startServer() {
   shared_ptr<TNonblockingServer> server(new TNonblockingServer(
                                           processor,
                                           protocol_factory,
+                                          g_Handler->bindAddress.c_str(),
                                           g_Handler->port,
                                           thread_manager
                                         ));
   g_Handler->setServer(server);
 
+  if (g_Handler->bindAddress.length()) {
+    LOG_OPER("Starting scribe server on address %s", g_Handler->bindAddress.c_str());
+  }
   LOG_OPER("Starting scribe server on port %lu", g_Handler->port);
   fflush(stderr);
 
